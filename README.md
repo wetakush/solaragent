@@ -48,9 +48,20 @@ and talks to almost any LLM provider — all in a fast, good-looking TUI built w
 
 ## 🚀 Install
 
+**macOS / Linux / FreeBSD**
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/wetakush/solaragent/main/install.sh | sh
 ```
+
+**Windows** (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/wetakush/solaragent/main/install.ps1 | iex
+```
+
+The installers pick the right binary for your CPU (Intel/AMD or ARM, incl. Apple Silicon), verify its SHA-256
+checksum and put `solar` on your PATH. Set `SOLAR_INSTALL_DIR` to choose another location.
 
 Prebuilt binaries for Linux, macOS, Windows and FreeBSD (amd64/arm64) are on the
 [releases page](https://github.com/wetakush/solaragent/releases). Or build from source:

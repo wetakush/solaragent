@@ -11,7 +11,14 @@ case "$(uname -m)" in
 esac
 case "$os" in linux|darwin|freebsd) ;; *) echo "unsupported OS: $os"; exit 1 ;; esac
 asset="solar-${os}-${arch}"
-dir="${SOLAR_INSTALL_DIR:-$HOME/.local/bin}"
+# pick a writable directory that is already on PATH (e.g. /opt/homebrew/bin on macOS), else ~/.local/bin
+dir="${SOLAR_INSTALL_DIR:-}"
+if [ -z "$dir" ]; then
+  for d in "$HOME/.local/bin" /opt/homebrew/bin /usr/local/bin "$HOME/bin"; do
+    case ":$PATH:" in *":$d:"*) if [ -d "$d" ] && [ -w "$d" ]; then dir="$d"; break; fi ;; esac
+  done
+  dir="${dir:-$HOME/.local/bin}"
+fi
 mkdir -p "$dir"
 base="https://github.com/${REPO}/releases/latest/download"
 tmp=$(mktemp -d)
@@ -25,5 +32,11 @@ if command -v sha256sum >/dev/null; then got=$(sha256sum "$tmp/solar" | cut -d' 
 chmod +x "$tmp/solar"
 mv "$tmp/solar" "$dir/solar"
 printf '\033[32m✓\033[0m installed %s\n' "$("$dir/solar" --version)"
-case ":$PATH:" in *":$dir:"*) ;; *) printf '  add to PATH: export PATH="%s:$PATH"\n' "$dir" ;; esac
+case ":$PATH:" in
+  *":$dir:"*) ;;
+  *)
+    rc="$HOME/.profile"
+    case "${SHELL:-}" in */zsh) rc="$HOME/.zshrc" ;; */bash) rc="$HOME/.bashrc" ;; esac
+    printf '  %s is not on your PATH — add it with:\n    echo '"'"'export PATH="%s:$PATH"'"'"' >> %s && exec $SHELL\n' "$dir" "$dir" "$rc" ;;
+esac
 printf '  run \033[1msolar\033[0m to get started (auto-updates are on by default)\n'
