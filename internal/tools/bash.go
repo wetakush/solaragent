@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -57,16 +56,11 @@ func RunShell(ctx context.Context, cwd, command string, timeout time.Duration, d
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	shell := "bash"
-	if _, err := exec.LookPath("bash"); err != nil {
-		shell = "sh"
-	}
-	cmd := exec.CommandContext(ctx, shell, "-c", command)
+	cmd := shellCommand(ctx, command)
 	cmd.Dir = cwd
 	cmd.Env = append(os.Environ(), "TERM=dumb", "NO_COLOR=1", "GIT_PAGER=cat", "PAGER=cat", "SOLAR_AGENT=1")
 	cmd.Stdin = nil
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	setProcGroup(cmd)
 	var buf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &buf, &buf
 	start := time.Now()
