@@ -229,3 +229,51 @@ func TestOpenAIEditAndUndo(t *testing.T) {
 	}
 	_ = llm.RoleUser
 }
+
+func TestRewindAndFork(t *testing.T) {
+	var bodies []string
+	var mu sync.Mutex
+	srv := mockOpenAI(t, &bodies, &mu)
+	defer srv.Close()
+	proj := setup(t, fmt.Sprintf(`{"provider":{"mock":{"base_url":%q,"api_key":"x","models":["m1"]}}}`, srv.URL+"/v1"))
+	a := app.New(proj, nil)
+	defer a.Close()
+	r, _ := collect(t, a, "mock/m1", "change hi to hello")
+	main := filepath.Join(proj, "main.go")
+	if b, _ := os.ReadFile(main); !strings.Contains(string(b), "hello") {
+		t.Fatal("edit not applied")
+	}
+	n := len(r.Sess.Messages)
+
+	f := r.Sess.Fork(-1)
+	if f.ID == r.Sess.ID || len(f.Messages) != n || f.ForkedFrom != r.Sess.ID || len(f.Turns) != 1 {
+		t.Fatalf("bad fork: %+v", f)
+	}
+	f2 := r.Sess.Fork(0)
+	if len(f2.Messages) != 0 || len(f2.Turns) != 0 {
+		t.Fatal("fork(0) should be empty")
+	}
+
+	turns := r.Sess.UserTurns()
+	if len(turns) != 1 || turns[0].Text != "change hi to hello" || turns[0].FilesChanged != 1 {
+		t.Fatalf("turns = %+v", turns)
+	}
+	// chat-only rewind keeps the file
+	c := r.Sess.Fork(-1)
+	if text, files := c.RewindTo(0, false); text != "change hi to hello" || len(files) != 0 || len(c.Messages) != 0 {
+		t.Fatalf("chat-only rewind: %q %v", text, files)
+	}
+	if b, _ := os.ReadFile(main); !strings.Contains(string(b), "hello") {
+		t.Fatal("chat-only rewind must not touch files")
+	}
+	// full rewind restores the file; the fork is untouched
+	if _, files := r.Sess.RewindTo(0, true); len(files) != 1 {
+		t.Fatal("expected file restore")
+	}
+	if b, _ := os.ReadFile(main); strings.Contains(string(b), "hello") {
+		t.Fatal("file not restored")
+	}
+	if len(f.Messages) != n {
+		t.Fatal("fork must not change when the original is rewound")
+	}
+}

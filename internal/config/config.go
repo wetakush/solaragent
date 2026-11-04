@@ -41,19 +41,20 @@ type AgentConfig struct {
 }
 
 type Config struct {
-	Schema       string                    `json:"$schema,omitempty"`
-	Model        string                    `json:"model,omitempty"`
-	SmallModel   string                    `json:"small_model,omitempty"`
-	Theme        string                    `json:"theme,omitempty"`
-	Effort       string                    `json:"effort,omitempty"`
-	Providers    map[string]ProviderConfig `json:"provider,omitempty"`
-	MCP          map[string]MCPConfig      `json:"mcp,omitempty"`
-	Agents       map[string]AgentConfig    `json:"agent,omitempty"`
-	Permission   map[string]string         `json:"permission,omitempty"` // tool -> allow|ask|deny
-	Instructions []string                  `json:"instructions,omitempty"`
-	AutoCompact  *bool                     `json:"autocompact,omitempty"`
-	Username     string                    `json:"username,omitempty"`
-	AutoUpdate   FlexString                `json:"autoupdate,omitempty"` // auto (default) | notify | off (or true/false)
+	Schema         string                    `json:"$schema,omitempty"`
+	Model          string                    `json:"model,omitempty"`
+	SmallModel     string                    `json:"small_model,omitempty"`
+	Theme          string                    `json:"theme,omitempty"`
+	Effort         string                    `json:"effort,omitempty"`
+	Providers      map[string]ProviderConfig `json:"provider,omitempty"`
+	MCP            map[string]MCPConfig      `json:"mcp,omitempty"`
+	Agents         map[string]AgentConfig    `json:"agent,omitempty"`
+	Permission     map[string]string         `json:"permission,omitempty"` // tool -> allow|ask|deny
+	Instructions   []string                  `json:"instructions,omitempty"`
+	AutoCompact    *bool                     `json:"autocompact,omitempty"`
+	Username       string                    `json:"username,omitempty"`
+	PermissionMode string                    `json:"permission_mode,omitempty"` // ask | accept-edits | bypass
+	AutoUpdate     FlexString                `json:"autoupdate,omitempty"`      // auto (default) | notify | off (or true/false)
 }
 
 func (c *Config) AutoCompactEnabled() bool { return c.AutoCompact == nil || *c.AutoCompact }
@@ -169,6 +170,9 @@ func merge(dst, src *Config) {
 	}
 	if src.Username != "" {
 		dst.Username = src.Username
+	}
+	if src.PermissionMode != "" {
+		dst.PermissionMode = src.PermissionMode
 	}
 	if src.AutoUpdate != "" {
 		dst.AutoUpdate = src.AutoUpdate

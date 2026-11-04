@@ -120,6 +120,8 @@ Source: https://` + app.Repo,
 	cmd.Flags().BoolVarP(&opts.Continue, "continue", "c", false, "continue the most recent session")
 	cmd.Flags().StringVarP(&opts.SessionID, "session", "s", "", "resume a session by id")
 	cmd.Flags().StringVarP(&opts.Prompt, "prompt", "p", "", "send a prompt on startup")
+	cmd.Flags().BoolVar(&opts.Bypass, "dangerously-skip-permissions", false, "bypass all permission prompts")
+	cmd.Flags().BoolVar(&opts.Bypass, "yolo", false, "alias for --dangerously-skip-permissions")
 
 	cmd.AddCommand(runCmd(), setupCmd(), upgradeCmd(), authCmd(), modelsCmd(), sessionsCmd(), exportCmd(), mcpCmd(), agentsCmd(), configCmd(), versionCmd())
 	return cmd

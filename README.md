@@ -60,8 +60,12 @@ and talks to almost any LLM provider — all in a fast, good-looking TUI built w
   `webfetch`, `todowrite`/`todoread`, and `task` (a read-only research sub-agent).
 - **Agents** — `build` (full access) and `plan` (read-only); switch with <kbd>Tab</kbd>. Define your own.
 - **MCP** — connect local (stdio) and remote (streamable HTTP) Model Context Protocol servers.
-- **Permissions** — approve, always-allow or deny edits and shell commands, with a diff preview.
-  Configure per tool; `/yolo` to auto-approve.
+- **Permission modes** — *ask* (approve edits & commands with a diff preview), *accept edits*, or
+  *bypass permissions*. Cycle with <kbd>Shift+Tab</kbd>, start with `solar --dangerously-skip-permissions`
+  (alias `--yolo`), or set `"permission_mode"` in config.
+- **Rewind** — <kbd>Esc</kbd> <kbd>Esc</kbd> (or `/rewind`) jumps back to any earlier message: restore the
+  conversation *and* the files, or the conversation only, then edit and resend.
+- **Fork** — `/fork` branches the chat into a new session; fork from any earlier message in the rewind picker.
 - **Sessions** — persisted per project; resume, rename, export to Markdown, **undo** a turn (restores files).
 - **Context management** — `/compact` and automatic compaction near the context limit.
 - **Custom commands** — Markdown files with `$ARGUMENTS`, `$1`, `` !`shell` `` and `@file` expansion.
@@ -100,14 +104,16 @@ solar run --format json "list TODOs" | jq .
 | --- | --- |
 | <kbd>Enter</kbd> | send (queues while the agent works) |
 | <kbd>Alt+Enter</kbd> / <kbd>Ctrl+J</kbd> / trailing `\` | newline |
-| <kbd>Tab</kbd> / <kbd>Shift+Tab</kbd> | cycle agents (build ⇄ plan ⇄ custom) |
+| <kbd>Tab</kbd> | cycle agents (build ⇄ plan ⇄ custom) |
+| <kbd>Shift+Tab</kbd> | permission mode: ask → accept edits → bypass |
+| <kbd>Esc</kbd> <kbd>Esc</kbd> (idle) | rewind to a previous message (enter: chat + code, ctrl+r: chat only, ctrl+f: fork) |
 | <kbd>Ctrl+K</kbd> | command palette |
 | <kbd>Ctrl+O</kbd> | switch model |
 | <kbd>Ctrl+T</kbd> | themes (live preview) |
 | <kbd>Ctrl+E</kbd> | compose in `$EDITOR` |
 | <kbd>Ctrl+N</kbd> | new session |
 | <kbd>Ctrl+X</kbd> then `n l m a t u c e x h q` | leader: new, sessions, models, agents, themes, undo, compact, editor, export, help, quit |
-| <kbd>Esc</kbd> <kbd>Esc</kbd> | interrupt the agent |
+| <kbd>Esc</kbd> <kbd>Esc</kbd> (busy) | interrupt the agent |
 | <kbd>PgUp</kbd>/<kbd>PgDn</kbd>, mouse wheel | scroll |
 | `@path` | attach a file / directory |
 | `!cmd` | run a shell command and share the output |
@@ -115,7 +121,7 @@ solar run --format json "list TODOs" | jq .
 ### Slash commands
 
 `/new` `/sessions` `/models` `/agents` `/connect` `/themes` `/effort` `/init` `/compact` `/undo`
-`/rename` `/export` `/copy` `/editor` `/thinking` `/details` `/yolo` `/mcp` `/status` `/upgrade` `/help` `/quit`
+`/rewind` `/fork` `/permissions` `/rename` `/export` `/copy` `/editor` `/thinking` `/details` `/yolo` `/mcp` `/status` `/upgrade` `/help` `/quit`
 
 ### Updating
 
@@ -138,6 +144,7 @@ See [`docs/solar.example.jsonc`](docs/solar.example.jsonc).
   "small_model": "anthropic/claude-haiku-4-5",   // used for session titles
   "theme": "solar",
   "effort": "high",                               // low | medium | high | xhigh | max
+  "permission_mode": "ask",                       // ask | accept-edits | bypass
   "autoupdate": "auto",                           // auto | notify | off
   "permission": { "bash": "ask", "edit": "ask", "webfetch": "allow" },
   "provider": {

@@ -52,7 +52,10 @@ var builtinCmds = []slashCmd{
 	{name: "editor", desc: "compose message in $EDITOR", keys: "ctrl+e"},
 	{name: "thinking", desc: "toggle reasoning visibility"},
 	{name: "details", desc: "toggle detailed tool output"},
-	{name: "yolo", desc: "toggle auto-approve all tools"},
+	{name: "permissions", desc: "ask / accept edits / bypass", keys: "shift+tab"},
+	{name: "yolo", desc: "toggle bypass permissions"},
+	{name: "rewind", desc: "go back to a previous message", keys: "esc esc"},
+	{name: "fork", desc: "fork this chat into a new session"},
 	{name: "mcp", desc: "show MCP servers"},
 	{name: "status", desc: "show session & config info"},
 	{name: "help", desc: "show help", keys: "ctrl+x h"},
@@ -189,12 +192,22 @@ func (m *Model) runCommand(name, args string) tea.Cmd {
 		m.refresh(false)
 		return m.notify(toastInfo, "Detailed tool output %s", onOff(m.details))
 	case "yolo":
-		m.yolo = !m.yolo
-		m.runner.AutoApprove = m.yolo
-		if m.yolo {
-			return m.notify(toastWarn, "YOLO mode on — all tool calls are auto-approved")
+		if m.permMode == permBypass {
+			return m.setPermMode(permAsk)
 		}
-		return m.notify(toastOK, "YOLO mode off")
+		return m.setPermMode(permBypass)
+	case "permissions":
+		var items []listItem
+		for i, n := range []string{"Ask", "Accept edits", "Bypass permissions"} {
+			items = append(items, listItem{Title: n, Desc: permModeNames[i], Value: fmt.Sprint(i), Current: i == m.permMode})
+		}
+		d := newListDialog("permissions", "Permission mode", items)
+		d.width = 70
+		m.dlg = d
+	case "rewind":
+		return m.openRewind()
+	case "fork":
+		return m.fork(-1)
 	case "mcp":
 		m.dlg = &textDialog{id: "mcp", title: "MCP servers", body: m.mcpText()}
 	case "status":
@@ -505,6 +518,14 @@ func (m *Model) onDialogResult(msg dialogResultMsg) tea.Cmd {
 		return m.notify(toastOK, "Theme: %s", msg.item.Value)
 	case "effort":
 		return m.setEffort(msg.item.Value)
+	case "permissions":
+		var mode int
+		fmt.Sscan(msg.item.Value, &mode)
+		return m.setPermMode(mode)
+	case "rewind":
+		var turn int
+		fmt.Sscan(msg.item.Value, &turn)
+		return m.rewind(turn, true)
 	case "rename":
 		if msg.value != "" {
 			return m.rename(msg.value)
@@ -514,6 +535,26 @@ func (m *Model) onDialogResult(msg dialogResultMsg) tea.Cmd {
 }
 
 func (m *Model) onDialogAction(msg dialogActionMsg) tea.Cmd {
+	if msg.id == "rewind" {
+		var turn int
+		fmt.Sscan(msg.item.Value, &turn)
+		m.dlg = nil
+		switch msg.key {
+		case "ctrl+r":
+			return m.rewind(turn, false)
+		case "ctrl+f":
+			for _, ti := range m.sess.UserTurns() {
+				if ti.Turn == turn {
+					cmd := m.fork(ti.MsgIndex)
+					m.input.SetValue(ti.Text)
+					m.input.CursorEnd()
+					m.layout()
+					return cmd
+				}
+			}
+		}
+		return nil
+	}
 	if msg.id == "sessions" && msg.key == "ctrl+d" {
 		if m.sess != nil && msg.item.Value == m.sess.ID {
 			return m.notify(toastWarn, "Can't delete the current session")
@@ -573,7 +614,7 @@ func (m *Model) statusText() string {
 	fmt.Fprintf(&sb, "Usage        in %s · out %s · cache read %s · write %s\n", util.HumanTokens(m.usage.Input),
 		util.HumanTokens(m.usage.Output), util.HumanTokens(m.usage.CacheRead), util.HumanTokens(m.usage.CacheWrite))
 	fmt.Fprintf(&sb, "Cost         $%.4f\n", m.cost)
-	fmt.Fprintf(&sb, "Auto-approve %s\n\n", onOff(m.yolo))
+	fmt.Fprintf(&sb, "Permissions  %s\n\n", permModeNames[m.permMode])
 	fmt.Fprintf(&sb, "Directory    %s\n", m.app.Cwd)
 	fmt.Fprintf(&sb, "Config       %s\n", config.GlobalConfigPath())
 	fmt.Fprintf(&sb, "Credentials  %s\n", config.AuthFile())
@@ -610,7 +651,9 @@ INPUT
   @path            attach a file or directory (fuzzy completion)
   !command         run a shell command and share its output
   ↑ / ↓            input history
-  tab / shift+tab  cycle agents (build · plan · custom)
+  tab              cycle agents (build · plan · custom)
+  shift+tab        permission mode: ask → accept edits → bypass
+  esc esc          (idle) rewind to a previous message · (busy) interrupt
 
 NAVIGATION
   pgup / pgdown    scroll conversation (mouse wheel works too)
@@ -621,7 +664,7 @@ NAVIGATION
   ctrl+c           interrupt / clear input / quit
 
 PERMISSIONS
-  enter allow once · a always allow (this session) · esc deny
+  1/enter allow once · 2 always allow (this session) · 3 bypass all · esc deny
   Configure defaults in solar.json:  "permission": { "bash": "ask", "edit": "allow" }
 
 CUSTOMIZE
@@ -685,4 +728,67 @@ func (m *Model) onUpdate(msg updateMsg) tea.Cmd {
 		return m.notify(toastOK, "You're on the latest version (v%s)", app.Version)
 	}
 	return nil
+}
+
+// ---- rewind & fork ----
+
+func (m *Model) openRewind() tea.Cmd {
+	if m.busy {
+		return m.notify(toastWarn, "Wait for the agent to finish (esc esc interrupts)")
+	}
+	turns := m.sess.UserTurns()
+	if len(turns) == 0 {
+		return m.notify(toastWarn, "No previous messages to rewind to")
+	}
+	var items []listItem
+	for i := len(turns) - 1; i >= 0; i-- {
+		ti := turns[i]
+		title := strings.ReplaceAll(strings.TrimSpace(ti.Text), "\n", " ")
+		desc := relTime(ti.Time)
+		if ti.FilesChanged > 0 {
+			desc += fmt.Sprintf(" · %d file(s) restored", ti.FilesChanged)
+		}
+		items = append(items, listItem{Title: title, Desc: desc, Value: fmt.Sprint(ti.Turn)})
+	}
+	d := newListDialog("rewind", "Rewind to a previous message", items)
+	d.width = 90
+	d.actions = map[string]string{"ctrl+r": "chat only", "ctrl+f": "fork here"}
+	d.hint = "enter: chat + code"
+	m.dlg = d
+	return nil
+}
+
+func (m *Model) rewind(turn int, restoreFiles bool) tea.Cmd {
+	text, files := m.sess.RewindTo(turn, restoreFiles)
+	_ = m.app.Store.Save(m.sess)
+	m.notices = nil
+	m.usage, m.lastCtx = m.sess.Usage, 0
+	m.rebuild()
+	m.input.SetValue(text)
+	m.input.CursorEnd()
+	m.layout()
+	m.vp.GotoBottom()
+	if restoreFiles && len(files) > 0 {
+		return m.notify(toastOK, "Rewound — %d file(s) restored. Edit the message and press enter", len(files))
+	}
+	return m.notify(toastOK, "Rewound the conversation. Edit the message and press enter")
+}
+
+// fork copies the chat (up to message index upTo, or all when < 0) into a new session.
+func (m *Model) fork(upTo int) tea.Cmd {
+	if m.busy {
+		return m.notify(toastWarn, "Wait for the agent to finish before forking")
+	}
+	if len(m.sess.Messages) == 0 {
+		return m.notify(toastWarn, "Nothing to fork yet")
+	}
+	parent := m.sess.Title
+	f := m.sess.Fork(upTo)
+	if len(f.Messages) > 0 {
+		_ = m.app.Store.Save(f)
+	}
+	m.setSession(f)
+	m.vp.GotoBottom()
+	return tea.Batch(m.notify(toastOK, "Forked from “%s” — the original chat is unchanged (/sessions)", parent),
+		tea.SetWindowTitle(m.windowTitle()))
 }

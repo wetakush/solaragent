@@ -30,20 +30,21 @@ type Turn struct {
 }
 
 type Session struct {
-	ID       string        `json:"id"`
-	Title    string        `json:"title"`
-	Cwd      string        `json:"cwd"`
-	Created  time.Time     `json:"created"`
-	Updated  time.Time     `json:"updated"`
-	Model    string        `json:"model,omitempty"`
-	Agent    string        `json:"agent,omitempty"`
-	Messages []llm.Message `json:"messages"`
-	Usage    llm.Usage     `json:"usage"`
-	Cost     float64       `json:"cost"`
-	LastCtx  int64         `json:"last_ctx"` // prompt size of the most recent request
-	Todos    []tools.Todo  `json:"todos,omitempty"`
-	Turns    []Turn        `json:"turns,omitempty"`
-	Parent   string        `json:"parent,omitempty"`
+	ID         string        `json:"id"`
+	Title      string        `json:"title"`
+	Cwd        string        `json:"cwd"`
+	Created    time.Time     `json:"created"`
+	Updated    time.Time     `json:"updated"`
+	Model      string        `json:"model,omitempty"`
+	Agent      string        `json:"agent,omitempty"`
+	Messages   []llm.Message `json:"messages"`
+	Usage      llm.Usage     `json:"usage"`
+	Cost       float64       `json:"cost"`
+	LastCtx    int64         `json:"last_ctx"` // prompt size of the most recent request
+	Todos      []tools.Todo  `json:"todos,omitempty"`
+	Turns      []Turn        `json:"turns,omitempty"`
+	Parent     string        `json:"parent,omitempty"`
+	ForkedFrom string        `json:"forked_from,omitempty"`
 }
 
 func NewID() string {
@@ -159,19 +160,71 @@ func (sess *Session) Undo() (string, []string, bool) {
 	if len(sess.Turns) == 0 {
 		return "", nil, false
 	}
-	t := sess.Turns[len(sess.Turns)-1]
-	sess.Turns = sess.Turns[:len(sess.Turns)-1]
-	var restored []string
-	for i := len(t.Files) - 1; i >= 0; i-- {
-		f := t.Files[i]
-		if f.Content == nil {
-			_ = os.Remove(f.Path)
-		} else {
-			_ = os.MkdirAll(filepath.Dir(f.Path), 0o755)
-			_ = os.WriteFile(f.Path, []byte(*f.Content), 0o644)
+	text, files := sess.RewindTo(len(sess.Turns)-1, true)
+	return text, files, true
+}
+
+// TurnInfo describes a user turn that can be rewound to.
+type TurnInfo struct {
+	Turn         int
+	MsgIndex     int
+	Text         string
+	Time         time.Time
+	FilesChanged int // files touched by this turn and all later ones
+}
+
+// UserTurns lists rewindable turns, oldest first.
+func (sess *Session) UserTurns() []TurnInfo {
+	var out []TurnInfo
+	files := map[string]bool{}
+	for i := len(sess.Turns) - 1; i >= 0; i-- {
+		t := sess.Turns[i]
+		for _, f := range t.Files {
+			files[f.Path] = true
 		}
-		restored = append(restored, f.Path)
+		if t.MsgIndex >= len(sess.Messages) || sess.Messages[t.MsgIndex].Role != llm.RoleUser {
+			continue
+		}
+		m := sess.Messages[t.MsgIndex]
+		text := m.Content
+		if m.Display != "" {
+			text = m.Display
+		}
+		out = append([]TurnInfo{{Turn: i, MsgIndex: t.MsgIndex, Text: text, Time: m.Time, FilesChanged: len(files)}}, out...)
 	}
+	return out
+}
+
+// RewindTo removes turn `turn` and everything after it. When restoreFiles is
+// set, files changed by those turns are restored to their earlier contents.
+// It returns the text of the rewound user message and the restored paths.
+func (sess *Session) RewindTo(turn int, restoreFiles bool) (string, []string) {
+	if turn < 0 || turn >= len(sess.Turns) {
+		return "", nil
+	}
+	var restored []string
+	if restoreFiles {
+		seen := map[string]bool{}
+		// newest first, so the oldest snapshot of each file wins
+		for i := len(sess.Turns) - 1; i >= turn; i-- {
+			t := sess.Turns[i]
+			for j := len(t.Files) - 1; j >= 0; j-- {
+				f := t.Files[j]
+				if f.Content == nil {
+					_ = os.Remove(f.Path)
+				} else {
+					_ = os.MkdirAll(filepath.Dir(f.Path), 0o755)
+					_ = os.WriteFile(f.Path, []byte(*f.Content), 0o644)
+				}
+				if !seen[f.Path] {
+					seen[f.Path] = true
+					restored = append(restored, f.Path)
+				}
+			}
+		}
+	}
+	t := sess.Turns[turn]
+	sess.Turns = sess.Turns[:turn]
 	text := ""
 	if t.MsgIndex < len(sess.Messages) {
 		if m := sess.Messages[t.MsgIndex]; m.Role == llm.RoleUser {
@@ -182,7 +235,29 @@ func (sess *Session) Undo() (string, []string, bool) {
 		}
 		sess.Messages = sess.Messages[:t.MsgIndex]
 	}
-	return text, restored, true
+	return text, restored
+}
+
+// Fork copies the conversation up to (not including) message index upTo into a new session.
+// Pass upTo < 0 to copy everything.
+func (sess *Session) Fork(upTo int) *Session {
+	if upTo < 0 || upTo > len(sess.Messages) {
+		upTo = len(sess.Messages)
+	}
+	now := time.Now()
+	f := &Session{
+		ID: NewID(), Cwd: sess.Cwd, Created: now, Updated: now, Model: sess.Model, Agent: sess.Agent,
+		Messages: append([]llm.Message(nil), sess.Messages[:upTo]...), LastCtx: sess.LastCtx,
+		Todos: append([]tools.Todo(nil), sess.Todos...), ForkedFrom: sess.ID,
+	}
+	title := strings.TrimPrefix(sess.Title, "⑂ ")
+	f.Title = "⑂ " + title
+	for _, t := range sess.Turns {
+		if t.MsgIndex < upTo {
+			f.Turns = append(f.Turns, t)
+		}
+	}
+	return f
 }
 
 // ModifiedFiles lists files changed during the session with +/- counts.

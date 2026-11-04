@@ -9,6 +9,7 @@
   "effort": "high", // low | medium | high | xhigh | max
   "autocompact": true,
   "autoupdate": "auto", // auto | notify | off
+  "permission_mode": "ask", // ask | accept-edits | bypass (explicit "deny" rules below still apply)
 
   // allow | ask | deny — by tool name or category (bash, edit, webfetch, mcp)
   "permission": {

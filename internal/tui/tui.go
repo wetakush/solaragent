@@ -27,6 +27,7 @@ import (
 )
 
 type Options struct {
+	Bypass    bool
 	SessionID string
 	Continue  bool
 	Model     string
@@ -39,8 +40,12 @@ type Options struct {
 type agentEventMsg struct {
 	ev   agent.Event
 	sess string
+	ch   chan agent.Event
 }
-type agentClosedMsg struct{ sess string }
+type agentClosedMsg struct {
+	sess string
+	ch   chan agent.Event
+}
 type tickMsg struct{}
 type mcpMsg struct{}
 type modelsMsg struct{ models []llm.ModelInfo }
@@ -106,7 +111,7 @@ type Model struct {
 	effort    string
 	thinking  bool
 	details   bool
-	yolo      bool
+	permMode  int // permAsk | permAcceptEdits | permBypass
 	toast     string
 	toastK    toastKind
 	toastTill time.Time
@@ -161,6 +166,15 @@ func newModel(a *app.App, opts Options) *Model {
 	m.vp.MouseWheelDelta = 3
 	m.vp.KeyMap = viewport.KeyMap{} // we handle scrolling keys ourselves
 	m.applyTheme()
+	switch a.Cfg.PermissionMode {
+	case "accept-edits", "acceptEdits", "accept_edits":
+		m.permMode = permAcceptEdits
+	case "bypass", "bypassPermissions", "yolo":
+		m.permMode = permBypass
+	}
+	if opts.Bypass {
+		m.permMode = permBypass
+	}
 
 	// model selection: flag > config > last used > default
 	m.model = opts.Model
@@ -212,9 +226,16 @@ func gitBranch(cwd string) string {
 }
 
 func (m *Model) setSession(s *session.Session) {
+	// Switching sessions while the agent works: stop the old run and fully
+	// reset run state, otherwise the new session would think it is still busy.
+	if m.busy {
+		m.interrupt()
+	}
+	m.busy, m.cancel, m.events, m.perm, m.status = false, nil, nil, nil, ""
+	m.queue, m.pendErr = nil, nil
 	m.sess = s
 	m.runner = agent.NewRunner(m.app, s, nil)
-	m.runner.AutoApprove = m.yolo
+	m.applyPermMode()
 	m.notices = nil
 	m.live = nil
 	m.usage, m.cost, m.lastCtx, m.todos = s.Usage, s.Cost, s.LastCtx, s.Todos
@@ -338,9 +359,9 @@ func waitEvent(ch chan agent.Event, sess string) tea.Cmd {
 	return func() tea.Msg {
 		ev, ok := <-ch
 		if !ok {
-			return agentClosedMsg{sess}
+			return agentClosedMsg{sess, ch}
 		}
-		return agentEventMsg{ev, sess}
+		return agentEventMsg{ev, sess, ch}
 	}
 }
 
@@ -382,14 +403,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.submit(msg.text)
 
 	case agentEventMsg:
-		if m.sess == nil || msg.sess != m.sess.ID {
-			return m, nil
+		if m.sess == nil || msg.sess != m.sess.ID || msg.ch != m.events {
+			// a run from a session we switched away from: deny pending prompts and drain until it ends
+			if msg.ev.Perm != nil {
+				msg.ev.Perm.Reply <- agent.Deny
+			}
+			return m, waitEvent(msg.ch, msg.sess)
 		}
 		cmd := m.handleEvent(msg.ev)
 		return m, tea.Batch(cmd, waitEvent(m.events, msg.sess))
 
 	case agentClosedMsg:
-		if m.sess == nil || msg.sess != m.sess.ID {
+		if m.sess == nil || msg.sess != m.sess.ID || msg.ch != m.events || !m.busy {
 			return m, nil
 		}
 		return m, m.finishRun()
@@ -541,6 +566,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			m.lastEsc = time.Now()
 			return m.notify(toastInfo, "Press esc again to interrupt")
 		}
+		if m.input.Value() == "" {
+			if time.Since(m.lastEsc) < 1500*time.Millisecond {
+				m.lastEsc = time.Time{}
+				return m.openRewind()
+			}
+			m.lastEsc = time.Now()
+			return m.notify(toastInfo, "Press esc again to rewind to a previous message")
+		}
 		return nil
 	}
 
@@ -571,9 +604,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		m.refresh(false)
 		return nil
 	case "shift+tab":
-		ags := m.app.PrimaryAgents()
-		m.agentIdx = (m.agentIdx - 1 + len(ags)) % len(ags)
-		return nil
+		return m.setPermMode((m.permMode + 1) % 3)
 	case "enter":
 		v := m.input.Value()
 		if strings.HasSuffix(v, "\\") {
@@ -648,19 +679,32 @@ func (m *Model) leaderKey(key string) tea.Cmd {
 	return nil
 }
 
+// handlePermKey answers a permission prompt. Only digits, enter and esc are
+// accepted so that text typed by accident can't approve anything.
 func (m *Model) handlePermKey(key string) tea.Cmd {
 	var d agent.Decision
 	switch key {
-	case "enter", "y", "1":
+	case "enter", "1":
 		d = agent.Allow
-	case "a", "A", "2":
+	case "2":
 		d = agent.AllowAlways
-	case "esc", "n", "d", "3":
+	case "3":
+		m.perm.Reply <- agent.Allow
+		m.perm = nil
+		m.layout()
+		return m.setPermMode(permBypass)
+	case "esc", "4":
 		d = agent.Deny
 	case "ctrl+c":
-		m.perm.Reply <- agent.Deny
-		m.perm = nil
 		m.interrupt()
+		return m.notify(toastWarn, "Interrupted")
+	case "ctrl+n":
+		return m.runCommand("new", "")
+	case "pgup":
+		m.vp.HalfViewUp()
+		return nil
+	case "pgdown":
+		m.vp.HalfViewDown()
 		return nil
 	default:
 		return nil
@@ -828,7 +872,7 @@ func (m *Model) startRun(content, display string, agOverride *app.AgentDef, mode
 	ch := make(chan agent.Event, 512)
 	m.events = ch
 	m.runner.Events = ch
-	m.runner.AutoApprove = m.yolo
+	m.applyPermMode()
 	if display != content {
 		m.runner.NextDisplay = display
 	}
@@ -1294,8 +1338,11 @@ func (m *Model) metaLine(w int) string {
 		model += lipgloss.NewStyle().Foreground(t.C(t.Muted)).Render(" · " + m.effort)
 	}
 	left := "  " + pill + " " + model
-	if m.yolo {
-		left += " " + lipgloss.NewStyle().Foreground(t.C(t.Bg)).Background(t.C(t.Error)).Bold(true).Padding(0, 1).Render("YOLO")
+	switch m.permMode {
+	case permAcceptEdits:
+		left += " " + lipgloss.NewStyle().Foreground(t.C(t.Bg)).Background(t.C(t.Warning)).Bold(true).Padding(0, 1).Render("⏵⏵ ACCEPT EDITS")
+	case permBypass:
+		left += " " + lipgloss.NewStyle().Foreground(t.C(t.Bg)).Background(t.C(t.Error)).Bold(true).Padding(0, 1).Render("⚡ BYPASS PERMISSIONS")
 	}
 	hints := "tab agent · ctrl+k commands · ctrl+o models"
 	if m.busy {
@@ -1386,8 +1433,8 @@ func (m *Model) permView() string {
 	}
 	k := lipgloss.NewStyle().Foreground(t.C(t.Primary)).Bold(true)
 	mu := lipgloss.NewStyle().Foreground(t.C(t.Muted))
-	keys := k.Render("enter") + mu.Render(" allow once   ") + k.Render("a") + mu.Render(" always allow "+p.Category+" this session   ") +
-		k.Render("esc") + mu.Render(" deny")
+	keys := k.Render("1") + mu.Render("/enter allow once   ") + k.Render("2") + mu.Render(" always allow "+p.Category+"   ") +
+		k.Render("3") + mu.Render(" bypass all   ") + k.Render("esc") + mu.Render(" deny")
 	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(t.C(t.Warning)).Padding(0, 1).Width(w).
 		Render(title + "\n\n" + body + "\n\n" + keys)
 	return lipgloss.NewStyle().PaddingLeft(1).Render(box)
@@ -1601,3 +1648,30 @@ func relTime(t time.Time) string {
 }
 
 func exportPath(cwd, id string) string { return filepath.Join(cwd, "solar-session-"+id+".md") }
+
+const (
+	permAsk = iota
+	permAcceptEdits
+	permBypass
+)
+
+var permModeNames = []string{"ask before edits & commands", "accept edits automatically", "bypass permissions (approve everything)"}
+
+func (m *Model) applyPermMode() {
+	if m.runner != nil {
+		m.runner.AutoApprove = m.permMode == permBypass
+		m.runner.AcceptEdits = m.permMode == permAcceptEdits
+	}
+}
+
+func (m *Model) setPermMode(mode int) tea.Cmd {
+	m.permMode = mode
+	m.applyPermMode()
+	switch mode {
+	case permAcceptEdits:
+		return m.notify(toastInfo, "Accept edits: file changes are applied without asking (shift+tab to switch)")
+	case permBypass:
+		return m.notify(toastWarn, "Bypass permissions: every tool call runs without asking (shift+tab to switch)")
+	}
+	return m.notify(toastOK, "Ask mode: edits and commands need approval")
+}

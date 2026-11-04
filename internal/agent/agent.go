@@ -72,7 +72,8 @@ type Runner struct {
 	App         *app.App
 	Sess        *session.Session
 	Env         *tools.Env
-	AutoApprove bool
+	AutoApprove bool // bypass: approve every tool call (explicit "deny" rules still apply)
+	AcceptEdits bool // approve file edits without asking
 	Events      chan<- Event
 	NextDisplay string // display text for the next user message
 
@@ -369,7 +370,7 @@ func (r *Runner) checkPermission(ctx context.Context, t tools.Tool, c llm.ToolCa
 		return Deny
 	}
 	r.mu.Lock()
-	always := r.always[cat] || r.AutoApprove
+	always := r.always[cat] || r.AutoApprove || (r.AcceptEdits && cat == tools.PermEdit)
 	r.mu.Unlock()
 	if always {
 		return Allow
@@ -528,7 +529,8 @@ func (r *Runner) subAgent(ctx context.Context, desc, prompt, model, effort strin
 		always[k] = v
 	}
 	r.mu.Unlock()
-	child := &Runner{App: r.App, Sess: sub, Env: tools.NewEnv(r.App.Cwd), Events: events, always: always, AutoApprove: r.AutoApprove}
+	child := &Runner{App: r.App, Sess: sub, Env: tools.NewEnv(r.App.Cwd), Events: events, always: always,
+		AutoApprove: r.AutoApprove, AcceptEdits: r.AcceptEdits}
 	child.Sess.Title = desc // skip title generation
 	go func() {
 		defer close(events)
