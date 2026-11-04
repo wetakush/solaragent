@@ -160,7 +160,7 @@ func (b *block) doRender(o renderOpts) string {
 		body := muted.Render(clampLines(strings.Join(lines, "\n"), w-6))
 		return lipgloss.NewStyle().PaddingLeft(2).Render(
 			lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(t.C(t.Subtle)).
-				Padding(0, 1).Width(w-4).Render(head + "\n" + body))
+				Padding(0, 1).Width(w - 4).Render(head + "\n" + body))
 
 	case bSummary:
 		bar := lipgloss.NewStyle().Foreground(t.C(t.Subtle)).Render(strings.Repeat("─", max(w-30, 4)))
@@ -470,7 +470,9 @@ func firstLine(s string) string {
 	return s
 }
 
-func renderDiff(t theme.Theme, d string, w int, full bool) string { return renderDiffOpt(t, d, w, full, true) }
+func renderDiff(t theme.Theme, d string, w int, full bool) string {
+	return renderDiffOpt(t, d, w, full, true)
+}
 
 func renderDiffOpt(t theme.Theme, d string, w int, full, nums bool) string {
 	if strings.TrimSpace(d) == "" {

@@ -279,11 +279,11 @@ func (d *listDialog) View(t theme.Theme, w, h int) string {
 // ---------- input dialog ----------
 
 type inputDialog struct {
-	id      string
-	title   string
-	prompt  string
-	input   textinput.Model
-	value   string // extra context carried with the result
+	id     string
+	title  string
+	prompt string
+	input  textinput.Model
+	value  string // extra context carried with the result
 }
 
 func newInputDialog(id, title, prompt, placeholder string, secret bool) *inputDialog {

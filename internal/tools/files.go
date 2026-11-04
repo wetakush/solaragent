@@ -148,7 +148,7 @@ func (*Write) Schema() map[string]any {
 
 func (*Write) Run(ctx context.Context, env *Env, input json.RawMessage) Result {
 	var in struct {
-		FilePath string `json:"file_path"`
+		FilePath string  `json:"file_path"`
 		Content  *string `json:"content"`
 	}
 	if err := parse(input, &in); err != nil {

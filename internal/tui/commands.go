@@ -2,9 +2,9 @@ package tui
 
 import (
 	"context"
-	"io"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"sort"
@@ -19,8 +19,8 @@ import (
 	"github.com/wetakush/solaragent/internal/config"
 	"github.com/wetakush/solaragent/internal/llm"
 	"github.com/wetakush/solaragent/internal/setup"
-	"github.com/wetakush/solaragent/internal/update"
 	"github.com/wetakush/solaragent/internal/theme"
+	"github.com/wetakush/solaragent/internal/update"
 	"github.com/wetakush/solaragent/internal/util"
 )
 

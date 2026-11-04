@@ -22,9 +22,9 @@ import (
 	"github.com/wetakush/solaragent/internal/config"
 	"github.com/wetakush/solaragent/internal/llm"
 	"github.com/wetakush/solaragent/internal/setup"
-	"github.com/wetakush/solaragent/internal/update"
 	"github.com/wetakush/solaragent/internal/theme"
 	"github.com/wetakush/solaragent/internal/tui"
+	"github.com/wetakush/solaragent/internal/update"
 	"github.com/wetakush/solaragent/internal/util"
 )
 
@@ -255,6 +255,7 @@ func runCmd() *cobra.Command {
 				fmt.Println()
 			}
 			err := <-errCh
+			r.Events = nil
 			r.FinishTitle(3 * time.Second)
 			if !quiet && format != "json" {
 				fmt.Fprintln(os.Stderr, sMuted.Render(fmt.Sprintf("◆ %s tokens · $%.4f · session %s",

@@ -65,10 +65,11 @@ type Request struct {
 }
 
 type Usage struct {
-	Input      int64 `json:"input"`
-	Output     int64 `json:"output"`
-	CacheRead  int64 `json:"cache_read"`
-	CacheWrite int64 `json:"cache_write"`
+	Input      int64   `json:"input"`
+	Output     int64   `json:"output"`
+	CacheRead  int64   `json:"cache_read"`
+	CacheWrite int64   `json:"cache_write"`
+	Cost       float64 `json:"cost,omitempty"` // provider-reported USD cost, if any
 }
 
 // ContextTokens is the size of the prompt that was sent.
@@ -79,6 +80,7 @@ func (u *Usage) Add(o Usage) {
 	u.Output += o.Output
 	u.CacheRead += o.CacheRead
 	u.CacheWrite += o.CacheWrite
+	u.Cost += o.Cost
 }
 
 type Response struct {

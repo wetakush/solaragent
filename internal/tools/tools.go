@@ -43,7 +43,7 @@ type Env struct {
 	mu       sync.Mutex
 	Todos    []Todo
 	readSet  map[string]bool
-	Snapshot func(path string)                                       // called before a file is modified
+	Snapshot func(path string)                                              // called before a file is modified
 	SubAgent func(ctx context.Context, desc, prompt string) (string, error) // used by the task tool
 }
 
@@ -118,7 +118,11 @@ func ReadOnly(name string) bool {
 }
 
 func obj(props map[string]any, required ...string) map[string]any {
-	return map[string]any{"type": "object", "properties": props, "required": required}
+	m := map[string]any{"type": "object", "properties": props}
+	if len(required) > 0 {
+		m["required"] = required
+	}
+	return m
 }
 
 func str(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }

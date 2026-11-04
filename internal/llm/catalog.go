@@ -23,6 +23,9 @@ type ModelInfo struct {
 func (m ModelInfo) Ref() string { return m.Provider + "/" + m.ID }
 
 func (m ModelInfo) Cost(u Usage) float64 {
+	if u.Cost > 0 {
+		return u.Cost
+	}
 	cr := m.CacheRead
 	if cr == 0 {
 		cr = m.InputPrice / 10

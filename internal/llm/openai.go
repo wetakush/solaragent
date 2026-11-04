@@ -204,7 +204,7 @@ func (o *OpenAI) Stream(ctx context.Context, req Request) <-chan Event {
 			var tools []map[string]any
 			for _, t := range req.Tools {
 				tools = append(tools, map[string]any{"type": "function", "function": map[string]any{
-					"name": t.Name, "description": t.Description, "parameters": t.Schema,
+					"name": t.Name, "description": t.Description, "parameters": cleanSchema(t.Schema),
 				}})
 			}
 			body["tools"] = tools
@@ -216,7 +216,30 @@ func (o *OpenAI) Stream(ctx context.Context, req Request) <-chan Event {
 			}
 			body["reasoning_effort"] = e
 		}
-		resp, err := o.do(ctx, "POST", "/chat/completions", body)
+		var resp *http.Response
+		var err error
+		for attempt := 0; ; attempt++ {
+			resp, err = o.do(ctx, "POST", "/chat/completions", body)
+			retryable := err != nil && ctx.Err() == nil
+			if err == nil {
+				switch resp.StatusCode {
+				case 429, 500, 502, 503, 504, 520, 522, 524, 529:
+					retryable = true
+				}
+			}
+			if !retryable || attempt >= 3 {
+				break
+			}
+			if resp != nil {
+				resp.Body.Close()
+			}
+			select {
+			case <-time.After(time.Duration(1<<attempt) * time.Second):
+			case <-ctx.Done():
+				ch <- Event{Type: EvError, Err: ctx.Err()}
+				return
+			}
+		}
 		if err != nil {
 			ch <- Event{Type: EvError, Err: err}
 			return
@@ -254,8 +277,9 @@ func (o *OpenAI) Stream(ctx context.Context, req Request) <-chan Event {
 					FinishReason string `json:"finish_reason"`
 				} `json:"choices"`
 				Usage *struct {
-					PromptTokens        int64 `json:"prompt_tokens"`
-					CompletionTokens    int64 `json:"completion_tokens"`
+					Cost                float64 `json:"cost"`
+					PromptTokens        int64   `json:"prompt_tokens"`
+					CompletionTokens    int64   `json:"completion_tokens"`
 					PromptTokensDetails struct {
 						CachedTokens int64 `json:"cached_tokens"`
 					} `json:"prompt_tokens_details"`
@@ -273,7 +297,7 @@ func (o *OpenAI) Stream(ctx context.Context, req Request) <-chan Event {
 			}
 			if chunk.Usage != nil {
 				cached := chunk.Usage.PromptTokensDetails.CachedTokens
-				out.Usage = Usage{Input: chunk.Usage.PromptTokens - cached, Output: chunk.Usage.CompletionTokens, CacheRead: cached}
+				out.Usage = Usage{Input: chunk.Usage.PromptTokens - cached, Output: chunk.Usage.CompletionTokens, CacheRead: cached, Cost: chunk.Usage.Cost}
 			}
 			for _, c := range chunk.Choices {
 				if c.Delta.Content != "" {
@@ -395,4 +419,34 @@ func (o *OpenAI) Probe(ctx context.Context, model string) error {
 		return fmt.Errorf("the API key was rejected: %s", extractErr(b))
 	}
 	return nil
+}
+
+// cleanSchema drops null/empty "required" lists and ensures "properties" exists;
+// some OpenAI-compatible gateways reject such schemas outright.
+func cleanSchema(s map[string]any) map[string]any {
+	out := make(map[string]any, len(s))
+	for k, v := range s {
+		out[k] = v
+	}
+	if r, ok := out["required"]; ok {
+		switch rv := r.(type) {
+		case nil:
+			delete(out, "required")
+		case []string:
+			if len(rv) == 0 {
+				delete(out, "required")
+			}
+		case []any:
+			if len(rv) == 0 {
+				delete(out, "required")
+			}
+		}
+	}
+	if _, ok := out["properties"]; !ok {
+		out["properties"] = map[string]any{}
+	}
+	if _, ok := out["type"]; !ok {
+		out["type"] = "object"
+	}
+	return out
 }

@@ -113,3 +113,18 @@ func TestHTMLToText(t *testing.T) {
 		t.Error("script not stripped")
 	}
 }
+
+// Some OpenAI-compatible gateways (e.g. NiceAI) fail with HTTP 502 on "required": null.
+func TestSchemasAreValid(t *testing.T) {
+	for _, tl := range Builtins() {
+		s := tl.Schema()
+		if s["type"] != "object" {
+			t.Errorf("%s: schema type must be object", tl.Name())
+		}
+		if r, ok := s["required"]; ok {
+			if rs, _ := r.([]string); len(rs) == 0 {
+				t.Errorf("%s: required must be omitted when empty, got %#v", tl.Name(), r)
+			}
+		}
+	}
+}

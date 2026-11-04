@@ -9,27 +9,27 @@ import (
 )
 
 type Theme struct {
-	Name        string
-	Dark        bool
-	Primary     string // brand / build agent
-	Secondary   string // plan agent
-	Accent      string
-	Text        string
-	Muted       string
-	Subtle      string // faint borders, separators
-	Panel       string // raised background (user messages, dialogs)
-	Bg          string // dialog background
-	Border      string
-	Success     string
-	Error       string
-	Warning     string
-	Info        string
-	DiffAdd     string
-	DiffDel     string
-	DiffAddBg   string
-	DiffDelBg   string
-	Gradient    []string
-	CodeTheme   string // chroma style for code blocks
+	Name      string
+	Dark      bool
+	Primary   string // brand / build agent
+	Secondary string // plan agent
+	Accent    string
+	Text      string
+	Muted     string
+	Subtle    string // faint borders, separators
+	Panel     string // raised background (user messages, dialogs)
+	Bg        string // dialog background
+	Border    string
+	Success   string
+	Error     string
+	Warning   string
+	Info      string
+	DiffAdd   string
+	DiffDel   string
+	DiffAddBg string
+	DiffDelBg string
+	Gradient  []string
+	CodeTheme string // chroma style for code blocks
 }
 
 func (t Theme) C(hex string) lipgloss.Color { return lipgloss.Color(hex) }

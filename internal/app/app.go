@@ -22,6 +22,7 @@ import (
 
 // Version is set at build time via -ldflags "-X .../internal/app.Version=x.y.z".
 var Version = "dev"
+
 const Repo = "github.com/wetakush/solaragent"
 const Author = "github.com/wetakush"
 

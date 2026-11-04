@@ -16,6 +16,30 @@ Open source (MIT) · made by [github.com/wetakush](https://github.com/wetakush)
 
 </div>
 
+## INSTALL
+
+**macOS** (Apple Silicon & Intel) · **Linux** · **FreeBSD**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/wetakush/solaragent/main/install.sh | sh
+```
+
+**Windows** (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/wetakush/solaragent/main/install.ps1 | iex
+```
+
+**From source** (any OS with Go 1.24+)
+
+```bash
+git clone https://github.com/wetakush/solaragent && cd solaragent && make install
+```
+
+Then run `solar` — the setup wizard opens on first launch. The installers pick the right binary for your CPU,
+verify its SHA-256 checksum and put `solar` on your PATH (`SOLAR_INSTALL_DIR` overrides the location).
+SolarAgent keeps itself up to date automatically. Prebuilt binaries: [releases](https://github.com/wetakush/solaragent/releases).
+
 ---
 
 SolarAgent is an AI coding agent that lives in your terminal, in the spirit of opencode.
@@ -45,33 +69,6 @@ and talks to almost any LLM provider — all in a fast, good-looking TUI built w
   external `$EDITOR`, command palette, leader keys.
 - **Scriptable** — `solar run "…"` streams to stdout, reads stdin, and can emit NDJSON events.
 - **Project instructions** — `AGENTS.md` (also `CLAUDE.md` / `SOLAR.md`) and `/init` to generate one.
-
-## 🚀 Install
-
-**macOS / Linux / FreeBSD**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/wetakush/solaragent/main/install.sh | sh
-```
-
-**Windows** (PowerShell)
-
-```powershell
-irm https://raw.githubusercontent.com/wetakush/solaragent/main/install.ps1 | iex
-```
-
-The installers pick the right binary for your CPU (Intel/AMD or ARM, incl. Apple Silicon), verify its SHA-256
-checksum and put `solar` on your PATH. Set `SOLAR_INSTALL_DIR` to choose another location.
-
-Prebuilt binaries for Linux, macOS, Windows and FreeBSD (amd64/arm64) are on the
-[releases page](https://github.com/wetakush/solaragent/releases). Or build from source:
-
-```bash
-git clone https://github.com/wetakush/solaragent && cd solaragent
-make install        # builds ./solar and copies it to ~/.local/bin
-```
-
-Requires Go 1.24+. [`ripgrep`](https://github.com/BurntSushi/ripgrep) is used for `grep` when available.
 
 ## 🔑 Connect a provider
 
