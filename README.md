@@ -188,6 +188,16 @@ internal/update      self-update from GitHub releases
 internal/theme       color themes & gradients
 ```
 
+## 📦 Releasing
+
+Releases are built locally and published with the GitHub CLI:
+
+```bash
+scripts/release.sh v1.2.0   # tests, tags, cross-compiles 7 targets, uploads binaries + checksums
+```
+
+Installed copies pick up new releases automatically.
+
 ## 🤝 Contributing
 
 Issues and PRs are welcome! Run `make test` before submitting.
