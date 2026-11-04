@@ -1,0 +1,56 @@
+// SolarAgent configuration example — copy to ~/.config/solar/solar.json or ./solar.json
+// SolarAgent is open source: https://github.com/wetakush/solaragent
+{
+  // default model as provider/model (see `solar models`)
+  "model": "anthropic/claude-opus-5-5",
+  // cheaper model used for generating session titles
+  "small_model": "anthropic/claude-haiku-4-5",
+  "theme": "solar", // solar, tokyonight, catppuccin, gruvbox, nord, dracula, rosepine, everforest, onedark, matrix, daylight
+  "effort": "high", // low | medium | high | xhigh | max
+  "autocompact": true,
+  "autoupdate": "auto", // auto | notify | off
+
+  // allow | ask | deny — by tool name or category (bash, edit, webfetch, mcp)
+  "permission": {
+    "bash": "ask",
+    "edit": "ask",
+    "webfetch": "allow"
+  },
+
+  // extra providers or overrides; kind defaults to "openai" (OpenAI-compatible)
+  "provider": {
+    "anthropic": { "api_key": "{env:ANTHROPIC_API_KEY}" },
+    "local-vllm": {
+      "name": "vLLM",
+      "base_url": "http://localhost:8000/v1",
+      "models": ["qwen3-coder-30b"]
+    }
+  },
+
+  // Model Context Protocol servers
+  "mcp": {
+    "filesystem": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "."]
+    },
+    "remote-docs": {
+      "type": "remote",
+      "url": "https://example.com/mcp",
+      "headers": { "Authorization": "Bearer {env:DOCS_TOKEN}" },
+      "enabled": false
+    }
+  },
+
+  // custom agents (Tab cycles primary agents)
+  "agent": {
+    "review": {
+      "description": "Reviews code for bugs without changing it",
+      "prompt": "You are a meticulous code reviewer. Report concrete bugs with file:line references.",
+      "tools": { "write": false, "edit": false, "multiedit": false, "bash": false },
+      "color": "accent"
+    }
+  },
+
+  // extra instruction files (globs, relative to the project root)
+  "instructions": ["CONTRIBUTING.md", "docs/guidelines/*.md"]
+}
